@@ -4,6 +4,14 @@ const _ = require('lodash');
 const fs = require('fs-extra');
 const crypto = require('crypto');
 
+function getUserFilesDir(req) {
+  const login = req?.user?.login || req?.auth?.user;
+  if (!login) return filesdir();
+  const dir = path.join(filesdir(), 'user-' + login.replace(/[^a-zA-Z0-9_-]/g, '_'));
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+  return dir;
+}
+
 const { datadir, filesdir } = require('../utility/directories');
 const socket = require('../utility/socket');
 const { encryptConnection, maskConnection } = require('../utility/crypting');
@@ -208,7 +216,12 @@ module.exports = {
       if (platformInfo.allowShellConnection) return portalConnections.map(x => encryptConnection(x));
       return portalConnections.map(maskConnection).filter(x => connectionHasPermission(x, loadedPermissions));
     }
-    return (await this.datastore.find()).filter(x => connectionHasPermission(x, loadedPermissions));
+    const login = req?.user?.login || req?.auth?.user;
+    let allConns = (await this.datastore.find()).filter(x => connectionHasPermission(x, loadedPermissions));
+    if (login) {
+      allConns = allConns.filter(x => !x.user || x.user === login);
+    }
+    return allConns;
   },
 
   async getUsedEngines() {
@@ -370,9 +383,15 @@ module.exports = {
   },
 
   save_meta: true,
-  async save(connection) {
+  async save(connection, req) {
     if (portalConnections) return;
     let res;
+    
+    const login = req?.user?.login || req?.auth?.user;
+    if (login) {
+      connection.user = login;
+    }
+
     const encrypted = encryptConnection(connection);
     if (connection._id) {
       res = await this.datastore.update(encrypted);
@@ -432,6 +451,11 @@ module.exports = {
   async update({ _id, values }, req) {
     if (portalConnections) return;
     await testConnectionPermission(_id, req);
+    
+    const login = req?.user?.login || req?.auth?.user;
+    const existing = await this.datastore.get(_id);
+    if (existing && existing.user && login && existing.user !== login) return false;
+
     const res = await this.datastore.patch(_id, values);
     socket.emitChanged('connection-list-changed');
     return res;
@@ -450,6 +474,10 @@ module.exports = {
     if (portalConnections) return;
     await testConnectionPermission(conid, req);
     const conn = await this.datastore.get(conid);
+    
+    const login = req?.user?.login || req?.auth?.user;
+    if (conn && conn.user && login && conn.user !== login) return false;
+
     let databases = (conn && conn.databases) || [];
     if (databases.find(x => x.name == database)) {
       databases = databases.map(x => (x.name == database ? { ...x, ...values } : x));
@@ -467,6 +495,11 @@ module.exports = {
   async delete(connection, req) {
     if (portalConnections) return;
     await testConnectionPermission(connection, req);
+    
+    const login = req?.user?.login || req?.auth?.user;
+    const existing = await this.datastore.get(connection._id);
+    if (existing && existing.user && login && existing.user !== login) return false;
+
     const res = await this.datastore.remove(connection._id);
     socket.emitChanged('connection-list-changed');
     return res;
@@ -573,12 +606,16 @@ module.exports = {
       return null;
     }
     await testConnectionPermission(conid, req);
-    return this.getCore({ conid, mask: true });
+    const conn = await this.getCore({ conid, mask: true });
+    
+    const login = req?.user?.login || req?.auth?.user;
+    if (conn && conn.user && login && conn.user !== login) return null;
+    return conn;
   },
 
   newSqliteDatabase_meta: true,
-  async newSqliteDatabase({ file }) {
-    const sqliteDir = path.join(filesdir(), 'sqlite');
+  async newSqliteDatabase({ file }, req) {
+    const sqliteDir = path.join(getUserFilesDir(req), 'sqlite');
     if (!(await fs.exists(sqliteDir))) {
       await fs.mkdir(sqliteDir);
     }
@@ -588,13 +625,13 @@ module.exports = {
       databaseFile,
       singleDatabase: true,
       defaultDatabase: `${file}.sqlite`,
-    });
+    }, req);
     return res;
   },
 
   newDuckdbDatabase_meta: true,
-  async newDuckdbDatabase({ file }) {
-    const duckdbDir = path.join(filesdir(), 'duckdb');
+  async newDuckdbDatabase({ file }, req) {
+    const duckdbDir = path.join(getUserFilesDir(req), 'duckdb');
     if (!(await fs.exists(duckdbDir))) {
       await fs.mkdir(duckdbDir);
     }
@@ -604,7 +641,7 @@ module.exports = {
       databaseFile,
       singleDatabase: true,
       defaultDatabase: `${file}.duckdb`,
-    });
+    }, req);
     return res;
   },
 

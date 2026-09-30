@@ -34,8 +34,9 @@ function readCore(reader, skip, limit, filter) {
   });
 }
 
-async function readJsonl({ skip, limit, filter }) {
-  const fileName = path.join(datadir(), 'query-history.jsonl');
+async function readJsonl({ skip, limit, filter }, login) {
+  const suffix = login ? `-${login.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
+  const fileName = path.join(datadir(), `query-history${suffix}.jsonl`);
   // @ts-ignore
   if (!(await fs.exists(fileName))) return [];
   const reader = readFileReverse(fileName);
@@ -48,7 +49,8 @@ module.exports = {
     const storage = require('./storage');
     const storageResult = await storage.readQueryHistory({ skip, limit, filter }, req);
     if (storageResult) return storageResult;
-    return readJsonl({ skip, limit, filter });
+    const login = req?.user?.login || req?.auth?.user;
+    return readJsonl({ skip, limit, filter }, login);
   },
 
   write_meta: true,
@@ -60,8 +62,11 @@ module.exports = {
       return 'OK';
     }
 
-    const fileName = path.join(datadir(), 'query-history.jsonl');
-    await fs.appendFile(fileName, JSON.stringify(data) + '\n');
+    const login = req?.user?.login || req?.auth?.user;
+    const suffix = login ? `-${login.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
+    const fileName = path.join(datadir(), `query-history${suffix}.jsonl`);
+    const dataWithUser = login ? { ...data, user: login } : data;
+    await fs.appendFile(fileName, JSON.stringify(dataWithUser) + '\n');
     socket.emit('query-history-changed');
     return 'OK';
   },

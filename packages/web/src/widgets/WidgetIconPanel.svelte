@@ -22,6 +22,7 @@
   import openNewTab from '../utility/openNewTab';
   import { useConfig, usePromoWidget } from '../utility/metadataLoaders';
   import { _t, getCurrentTranslations } from '../translations';
+  import { doLogout } from '../clientAuth';
 
   let domSettings;
   let domCloudAccount;
@@ -201,22 +202,10 @@
     <FontIcon icon={$lockedDatabaseMode ? 'icon locked-database-mode' : 'icon unlocked-database-mode'} />
   </div> -->
 
-  {#if getCurrentConfig().allowPrivateCloud}
-    {#if $cloudSigninTokenHolder}
-      <div
-        class="wrapper"
-        on:click={handleCloudAccountMenu}
-        bind:this={domCloudAccount}
-        data-testid="WidgetIconPanel_cloudAccount"
-      >
-        <FontIcon icon="icon cloud-account-connected" />
-      </div>
-    {:else}
-      <div class="wrapper" on:click={handleOpenCloudLogin} data-testid="WidgetIconPanel_cloudAccount">
-        <FontIcon icon="icon cloud-account" />
-      </div>
-    {/if}
-  {/if}
+  <!-- Replaced Cloud Account with local Logout button as requested -->
+  <div class="wrapper" on:click={doLogout} data-testid="WidgetIconPanel_logout" title={_t('widgets.logout', { defaultMessage: 'Log out' })}>
+    <FontIcon icon="mdi mdi-logout" />
+  </div>
 
   <div class="wrapper" on:click={handleSettingsMenu} bind:this={domSettings} data-testid="WidgetIconPanel_settings">
     <FontIcon icon="icon settings" />

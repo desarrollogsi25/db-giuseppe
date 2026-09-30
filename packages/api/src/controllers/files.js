@@ -1,3 +1,11 @@
+function getUserFilesDir(req) {
+  const login = req?.user?.login || req?.auth?.user;
+  if (!login) return filesdir();
+  const dir = path.join(filesdir(), 'user-' + login.replace(/[^a-zA-Z0-9_-]/g, '_'));
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+  return dir;
+}
+
 const fs = require('fs-extra');
 const path = require('path');
 const crypto = require('crypto');
@@ -47,7 +55,7 @@ module.exports = {
   async list({ folder, parseFrontMatter }, req) {
     const loadedPermissions = await loadPermissionsFromRequest(req);
     if (!hasPermission(`files/${folder}/read`, loadedPermissions)) return [];
-    const dir = path.join(filesdir(), folder);
+    const dir = path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder);
     if (!(await fs.exists(dir))) return [];
     const fileNames = await fs.readdir(dir);
     if (!parseFrontMatter) {
@@ -89,11 +97,11 @@ module.exports = {
   listAll_meta: true,
   async listAll(_params, req) {
     const loadedPermissions = await loadPermissionsFromRequest(req);
-    const folders = await fs.readdir(filesdir());
+    const folders = await fs.readdir((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()));
     const res = [];
     for (const folder of folders) {
       if (!hasPermission(`files/${folder}/read`, loadedPermissions)) continue;
-      const dir = path.join(filesdir(), folder);
+      const dir = path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder);
       const files = (await fs.readdir(dir)).map(file => ({ folder, file }));
       res.push(...files);
     }
@@ -107,7 +115,7 @@ module.exports = {
     if (!checkSecureFilePathsWithoutDirectory(folder, file)) {
       return false;
     }
-    await fs.unlink(path.join(filesdir(), folder, file));
+    await fs.unlink(path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder, file));
     socket.emitChanged(`files-changed`, { folder });
     socket.emitChanged(`all-files-changed`);
     this.emitChangedFolder(folder);
@@ -121,7 +129,7 @@ module.exports = {
     if (!checkSecureFilePathsWithoutDirectory(folder, file, newFile)) {
       return false;
     }
-    await fs.rename(path.join(filesdir(), folder, file), path.join(filesdir(), folder, newFile));
+    await fs.rename(path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder, file), path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder, newFile));
     socket.emitChanged(`files-changed`, { folder });
     socket.emitChanged(`all-files-changed`);
     return true;
@@ -143,7 +151,7 @@ module.exports = {
       return false;
     }
     if (!hasPermission(`files/${folder}/write`, loadedPermissions)) return false;
-    await fs.copyFile(path.join(filesdir(), folder, file), path.join(filesdir(), folder, newFile));
+    await fs.copyFile(path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder, file), path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder, newFile));
     socket.emitChanged(`files-changed`, { folder });
     socket.emitChanged(`all-files-changed`);
     return true;
@@ -168,7 +176,7 @@ module.exports = {
     } else {
       const loadedPermissions = await loadPermissionsFromRequest(req);
       if (!hasPermission(`files/${folder}/read`, loadedPermissions)) return null;
-      const text = await fs.readFile(path.join(filesdir(), folder, file), { encoding: 'utf-8' });
+      const text = await fs.readFile(path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder, file), { encoding: 'utf-8' });
       return deserialize(format, text);
     }
   },
@@ -215,7 +223,7 @@ module.exports = {
       return true;
     } else {
       if (!hasPermission(`files/${folder}/write`, loadedPermissions)) return false;
-      const dir = path.join(filesdir(), folder);
+      const dir = path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder);
       if (!(await fs.exists(dir))) {
         await fs.mkdir(dir);
       }
@@ -245,7 +253,7 @@ module.exports = {
   async favorites(_params, req) {
     const loadedPermissions = await loadPermissionsFromRequest(req);
     if (!hasPermission(`files/favorites/read`, loadedPermissions)) return [];
-    const dir = path.join(filesdir(), 'favorites');
+    const dir = path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), 'favorites');
     if (!(await fs.exists(dir))) return [];
     const files = await fs.readdir(dir);
     const res = [];
@@ -381,7 +389,7 @@ module.exports = {
       return path.join(appdir(), app, file);
     } else {
       if (!hasPermission(`files/${folder}/write`, loadedPermissions)) return false;
-      const dir = path.join(filesdir(), folder);
+      const dir = path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder);
       if (!(await fs.exists(dir))) {
         await fs.mkdir(dir);
       }
@@ -425,12 +433,12 @@ module.exports = {
   },
 
   saveUploadedFile_meta: true,
-  async saveUploadedFile({ filePath, fileName }) {
+  async saveUploadedFile({ filePath, fileName }, req) {
     const FOLDERS = ['sql', 'sqlite'];
     for (const folder of FOLDERS) {
       if (fileName.toLowerCase().endsWith('.' + folder)) {
         logger.info(`DBGM-00012 Saving ${folder} file ${fileName}`);
-        await fs.copyFile(filePath, path.join(filesdir(), folder, fileName));
+        await fs.copyFile(filePath, path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder, fileName));
 
         socket.emitChanged(`files-changed`, { folder: folder });
         socket.emitChanged(`all-files-changed`);
@@ -453,7 +461,7 @@ module.exports = {
       return false;
     }
     try {
-      await copyExportFile(path.join(filesdir(), folder, file), filePath, { noFollow: !platformInfo.isElectron });
+      await copyExportFile(path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), folder, file), filePath, { noFollow: !platformInfo.isElectron });
     } catch (err) {
       if (!(err instanceof SecureExportWriteRefusedError)) throw err;
       logger.warn({ filePath }, 'DBGM-00000 Refused export write outside managed data directories');
@@ -506,7 +514,7 @@ module.exports = {
   async getFileThemes(_params, req) {
     const loadedPermissions = await loadPermissionsFromRequest(req);
     if (!hasPermission(`files/themes/read`, loadedPermissions)) return [];
-    const dir = path.join(filesdir(), 'themes');
+    const dir = path.join((typeof req !== 'undefined' ? getUserFilesDir(req) : filesdir()), 'themes');
     if (!(await fs.exists(dir))) return [];
     const files = await fs.readdir(dir);
     const res = [];

@@ -248,6 +248,53 @@ class LoginsProvider extends AuthProviderBase {
       };
     }
 
+    // Custom multi-user support via users.json
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const { datadir } = require('../utility/directories');
+      const usersFile = path.join(datadir(), 'users.json');
+      let users = {};
+      if (fs.existsSync(usersFile)) {
+        users = JSON.parse(fs.readFileSync(usersFile, 'utf8'));
+      }
+      
+      if (login && password) {
+        if (users[login]) {
+          if (users[login] === password) {
+            return {
+              accessToken: jwt.sign(
+                {
+                  amoid: this.amoid,
+                  login,
+                },
+                getTokenSecret(),
+                { expiresIn: getTokenLifetime() }
+              ),
+            };
+          } else {
+            return { error: 'Contraseña incorrecta' };
+          }
+        } else {
+          // Auto-register
+          users[login] = password;
+          fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+          return {
+            accessToken: jwt.sign(
+              {
+                amoid: this.amoid,
+                login,
+              },
+              getTokenSecret(),
+              { expiresIn: getTokenLifetime() }
+            ),
+          };
+        }
+      }
+    } catch (err) {
+      console.error('Error handling users.json', err);
+    }
+
     return { error: 'Invalid credentials' };
   }
 
@@ -304,7 +351,7 @@ function detectEnvAuthProviderCore() {
   if (hasEnvLogins()) {
     return 'logins';
   }
-  return 'none';
+  return 'logins';
 }
 
 function detectEnvAuthProvider() {
